@@ -196,8 +196,8 @@ int udf_set_version(struct udf_disc *disc, int udf_rev)
 
 void get_random_bytes(void *buffer, size_t count)
 {
-	int fd;
-	size_t i;
+	int fd, value;
+	size_t i, n;
 
 	fd = open("/dev/urandom", O_RDONLY);
 	if (fd >= 0)
@@ -210,8 +210,14 @@ void get_random_bytes(void *buffer, size_t count)
 		close(fd);
 	}
 
-	for (i = 0; i < count; ++i)
-		((uint8_t *)buffer)[i] = rand() % 0xFF;
+	for (i = 0; i < count; i += n)
+	{
+		value = rand();
+		n = sizeof(value);
+		if (i + n > count)
+			n = count - i;
+		memcpy(buffer+i, &value, n);
+	}
 }
 
 void split_space(struct udf_disc *disc)
@@ -276,8 +282,11 @@ void split_space(struct udf_disc *disc)
 	}
 
 	accessType = le32_to_cpu(disc->udf_pd[0]->accessType);
-	if ((accessType == PD_ACCESS_TYPE_OVERWRITABLE || accessType == PD_ACCESS_TYPE_REWRITABLE) && sizes[LVID_SIZE] * (size_t)disc->blocksize < 8192)
+	if ((accessType == PD_ACCESS_TYPE_OVERWRITABLE || accessType == PD_ACCESS_TYPE_REWRITABLE) && (uint64_t)sizes[LVID_SIZE] * disc->blocksize < 8192 && blocks > 257)
 		sizes[LVID_SIZE] = (8192 + disc->blocksize-1) / disc->blocksize;
+
+	if (sizes[VDS_SIZE] > 6 && blocks <= 257)
+		sizes[VDS_SIZE] = 6;
 
 	if (!(disc->flags & FLAG_VAT) && blocks < 770)
 		start = 0;
@@ -301,7 +310,7 @@ void split_space(struct udf_disc *disc)
 		}
 		set_extent(disc, RVDS, start, sizes[VDS_SIZE]);
 	}
-	else
+	else if (blocks > 257)
 	{
 		if (blocks >= 3072)
 			start = find_next_extent_size(disc, (blocks-257+97)/32*32, USPACE, sizes[VDS_SIZE], offsets[VDS_SIZE]);
@@ -608,13 +617,21 @@ void setup_anchor(struct udf_disc *disc)
 	mlen = ext->blocks * disc->blocksize;
 
 	ext = next_extent(disc->head, RVDS);
-	if (!ext)
+	if (!ext && disc->blocks > 257)
 	{
 		fprintf(stderr, "%s: Error: Not enough blocks on device\n", appname);
 		exit(1);
 	}
-	rloc = ext->start;
-	rlen = ext->blocks * disc->blocksize;
+	if (disc->blocks > 257)
+	{
+		rloc = ext->start;
+		rlen = ext->blocks * disc->blocksize;
+	}
+	else
+	{
+		rloc = mloc;
+		rlen = mlen;
+	}
 
 	ext = next_extent(disc->head, ANCHOR);
 	if (!ext)
@@ -720,7 +737,7 @@ int setup_space(struct udf_disc *disc, struct udf_extent *pspace, uint32_t offse
 		if (pspace->blocks%8)
 			sbd->bitmap[nBytes-1] = 0xFF >> (8-(pspace->blocks%8));
 		clear_bits(sbd->bitmap, offset, (length + disc->blocksize - 1) / disc->blocksize);
-		sbd->descTag = udf_query_tag(disc, TAG_IDENT_SBD, 1, desc->offset, desc->data, sizeof(struct spaceBitmapDesc));
+		sbd->descTag = udf_query_tag(disc, TAG_IDENT_SBD, 1, desc->offset, desc->data, 0, sizeof(struct spaceBitmapDesc));
 	}
 	else if (disc->flags & FLAG_SPACE_TABLE)
 	{
@@ -776,7 +793,7 @@ int setup_space(struct udf_disc *disc, struct udf_extent *pspace, uint32_t offse
 		use->icbTag.parentICBLocation.partitionReferenceNum = cpu_to_le16(0);
 		use->icbTag.fileType = ICBTAG_FILE_TYPE_USE;
 		use->icbTag.flags = cpu_to_le16(ICBTAG_FLAG_AD_SHORT);
-		use->descTag = udf_query_tag(disc, TAG_IDENT_USE, 1, desc->offset, desc->data, sizeof(struct unallocSpaceEntry) + le32_to_cpu(use->lengthAllocDescs));
+		use->descTag = udf_query_tag(disc, TAG_IDENT_USE, 1, desc->offset, desc->data, 0, sizeof(struct unallocSpaceEntry) + le32_to_cpu(use->lengthAllocDescs));
 
 		if (disc->flags & FLAG_STRATEGY4096)
 		{
@@ -971,7 +988,7 @@ void setup_vds(struct udf_disc *disc)
 	stable[0] = next_extent(disc->head, STABLE);
 	sspace = next_extent(disc->head, SSPACE);
 
-	if (!mvds || !rvds || !lvid)
+	if (!mvds || (!rvds && disc->blocks > 257) || !lvid)
 	{
 		fprintf(stderr, "%s: Error: Not enough blocks on device\n", appname);
 		exit(1);
@@ -993,8 +1010,7 @@ void setup_vds(struct udf_disc *disc)
 	setup_pd(disc, mvds, rvds, 2);
 	setup_usd(disc, mvds, rvds, 3);
 	setup_iuvd(disc, mvds, rvds, 4);
-	if (mvds->blocks > 5)
-		setup_td(disc, mvds, rvds, 5);
+	setup_td(disc, mvds, rvds, 5);
 }
 
 void setup_pvd(struct udf_disc *disc, struct udf_extent *mvds, struct udf_extent *rvds, uint32_t offset)
@@ -1007,6 +1023,8 @@ void setup_pvd(struct udf_disc *disc, struct udf_extent *mvds, struct udf_extent
 	desc->data->buffer = disc->udf_pvd[0];
 	disc->udf_pvd[0]->descTag = query_tag(disc, mvds, desc, 1);
 
+	if (!rvds)
+		return;
 	desc = set_desc(rvds, TAG_IDENT_PVD, offset, length, NULL);
 	memcpy(disc->udf_pvd[1] = desc->data->buffer, disc->udf_pvd[0], length);
 	disc->udf_pvd[1]->descTag = query_tag(disc, rvds, desc, 1);
@@ -1026,6 +1044,8 @@ void setup_lvd(struct udf_disc *disc, struct udf_extent *mvds, struct udf_extent
 	desc->data->buffer = disc->udf_lvd[0];
 	disc->udf_lvd[0]->descTag = query_tag(disc, mvds, desc, 1);
 
+	if (!rvds)
+		return;
 	desc = set_desc(rvds, TAG_IDENT_LVD, offset, length, NULL);
 	memcpy(disc->udf_lvd[1] = desc->data->buffer, disc->udf_lvd[0], length);
 	disc->udf_lvd[1]->descTag = query_tag(disc, rvds, desc, 1);
@@ -1057,6 +1077,8 @@ void setup_pd(struct udf_disc *disc, struct udf_extent *mvds, struct udf_extent 
 	desc->data->buffer = disc->udf_pd[0];
 	disc->udf_pd[0]->descTag = query_tag(disc, mvds, desc, 1);
 
+	if (!rvds)
+		return;
 	desc = set_desc(rvds, TAG_IDENT_PD, offset, length, NULL);
 	memcpy(disc->udf_pd[1] = desc->data->buffer, disc->udf_pd[0], length);
 	disc->udf_pd[1]->descTag = query_tag(disc, rvds, desc, 1);
@@ -1086,6 +1108,8 @@ void setup_usd(struct udf_disc *disc, struct udf_extent *mvds, struct udf_extent
 	desc->data->buffer = disc->udf_usd[0];
 	disc->udf_usd[0]->descTag = query_tag(disc, mvds, desc, 1);
 
+	if (!rvds)
+		return;
 	desc = set_desc(rvds, TAG_IDENT_USD, offset, length, NULL);
 	memcpy(disc->udf_usd[1] = desc->data->buffer, disc->udf_usd[0], length);
 	disc->udf_usd[1]->descTag = query_tag(disc, rvds, desc, 1);
@@ -1103,6 +1127,8 @@ void setup_iuvd(struct udf_disc *disc, struct udf_extent *mvds, struct udf_exten
 	desc->data->buffer = disc->udf_iuvd[0];
 	disc->udf_iuvd[0]->descTag = query_tag(disc, mvds, desc, 1);
 
+	if (!rvds)
+		return;
 	desc = set_desc(rvds, TAG_IDENT_IUVD, offset, length, NULL);
 	memcpy(disc->udf_iuvd[1] = desc->data->buffer, disc->udf_iuvd[0], length);
 	disc->udf_iuvd[1]->descTag = query_tag(disc, rvds, desc, 1);
@@ -1118,6 +1144,8 @@ void setup_td(struct udf_disc *disc, struct udf_extent *mvds, struct udf_extent 
 	desc->data->buffer = disc->udf_td[0];
 	disc->udf_td[0]->descTag = query_tag(disc, mvds, desc, 1);
 
+	if (!rvds)
+		return;
 	desc = set_desc(rvds, TAG_IDENT_TD, offset, length, NULL);
 	memcpy(disc->udf_td[1] = desc->data->buffer, disc->udf_td[0], length);
 	disc->udf_td[1]->descTag = query_tag(disc, rvds, desc, 1);
@@ -1211,21 +1239,32 @@ void setup_stable(struct udf_disc *disc, struct udf_extent *stable[4], struct ud
 
 void setup_vat(struct udf_disc *disc, struct udf_extent *pspace)
 {
-	uint32_t offset = 0;
+	uint32_t offset;
 	struct udf_extent *anchor;
 	struct udf_desc *vtable;
 	struct udf_data *data;
-	uint32_t len;
+	uint32_t len, i;
 	struct virtualAllocationTable15 *vat15;
 	struct virtualAllocationTable20 *vat20;
+	struct impUseExtAttr *ea_attr;
+	struct LVExtensionEA *ea_lv;
+	uint8_t buffer[(sizeof(*ea_attr)+sizeof(*ea_lv)+3)/4*4];
+	uint16_t checksum;
 	uint16_t udf_rev_le16;
+	uint32_t min_blocks;
+	uint32_t align;
+
+	/* Put VAT to the last sector correctly aligned */
+	align = disc->sizing[PSPACE_SIZE].align;
+	offset = pspace->tail->offset + (pspace->tail->length + disc->blocksize-1) / disc->blocksize;
+	offset = (offset + align) / align * align - 1;
 
 	if (disc->flags & FLAG_MIN_300_BLOCKS)
 	{
-		// On optical discs one track has minimal size of 300 sectors, so put VAT to the last sector
-		offset = pspace->tail->offset + (pspace->tail->length + disc->blocksize-1) / disc->blocksize;
-		if (pspace->start + offset < 299)
-			offset = 299 - pspace->start;
+		// On optical TAO discs one track has minimal size of 300 sectors
+		min_blocks = (300 + align) / align * align - 1;
+		if (pspace->start + offset < min_blocks)
+			offset = min_blocks - pspace->start;
 	}
 
 	if (disc->flags & FLAG_CLOSED)
@@ -1260,12 +1299,41 @@ void setup_vat(struct udf_disc *disc, struct udf_extent *pspace)
 	{
 		vtable = udf_create(disc, pspace, (const dchars *)"\x08" UDF_ID_ALLOC, strlen(UDF_ID_ALLOC)+1, offset, NULL, FID_FILE_CHAR_HIDDEN, ICBTAG_FILE_TYPE_UNDEF, 0);
 		disc->vat_entries--; // Remove VAT file itself from VAT table
+		udf_rev_le16 = cpu_to_le16(disc->udf_rev);
+		memset(&buffer, 0, sizeof(buffer));
+		ea_attr = (struct impUseExtAttr *)buffer;
+		ea_attr->attrType = cpu_to_le32(EXTATTR_IMP_USE);
+		ea_attr->attrSubtype = EXTATTR_SUBTYPE;
+		ea_attr->attrLength = cpu_to_le32(sizeof(buffer));
+		ea_attr->impUseLength = cpu_to_le32(sizeof(*ea_lv));
+		ea_attr->impIdent.identSuffix[2] = UDF_OS_CLASS_UNIX;
+		ea_attr->impIdent.identSuffix[3] = UDF_OS_ID_LINUX;
+		memcpy(ea_attr->impIdent.identSuffix, &udf_rev_le16, sizeof(udf_rev_le16));
+		strcpy((char *)ea_attr->impIdent.ident, UDF_ID_VAT_LVEXTENSION);
+		ea_lv = (struct LVExtensionEA *)&ea_attr->impUse[0];
+		checksum = 0;
+		for (i = 0; i < sizeof(*ea_attr); ++i)
+			checksum += ((uint8_t *)ea_attr)[i];
+		ea_lv->headerChecksum = cpu_to_le16(checksum);
+		if (disc->flags & FLAG_EFE)
+		{
+			struct extendedFileEntry *efe = (struct extendedFileEntry *)vtable->data->buffer;
+			ea_lv->verificationID = efe->uniqueID;
+		}
+		else
+		{
+			struct fileEntry *fe = (struct fileEntry *)vtable->data->buffer;
+			ea_lv->verificationID = fe->uniqueID;
+		}
+		ea_lv->numFiles = query_lvidiu(disc)->numFiles;
+		ea_lv->numDirs = query_lvidiu(disc)->numDirs;
+		memcpy(ea_lv->logicalVolIdent, disc->udf_lvd[0]->logicalVolIdent, 128);
+		insert_ea(disc, vtable, (struct genericFormat *)buffer, sizeof(buffer));
 		len = sizeof(struct virtualAllocationTable15);
 		data = alloc_data(disc->vat, disc->vat_entries * sizeof(uint32_t));
 		insert_data(disc, pspace, vtable, data);
 		data = alloc_data(&default_vat15, len);
 		vat15 = data->buffer;
-		udf_rev_le16 = cpu_to_le16(disc->udf_rev);
 		memcpy(vat15->vatIdent.identSuffix, &udf_rev_le16, sizeof(udf_rev_le16));
 		insert_data(disc, pspace, vtable, data);
 	}
