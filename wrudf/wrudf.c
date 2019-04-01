@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <locale.h>
+#include <errno.h>
 #include <sys/resource.h>
 
 #ifdef USE_READLINE
@@ -408,7 +409,7 @@ initialise(char *devicename)
     integrityDescBlocknumber++;
 
     updateTimestamp(0,0);
-    memcpy(lvid->impUse + 2 * sizeof(uint32_t) * lvid->numOfPartitions, &entityWRUDF, sizeof(regid));
+    memcpy(lvid->data + 2 * sizeof(uint32_t) * lvid->numOfPartitions, &entityWRUDF, sizeof(regid));
     lvid->recordingDateAndTime = timeStamp;
     lvid->integrityType = LVID_INTEGRITY_TYPE_OPEN;
     lvid->descTag.tagLocation = integrityDescBlocknumber;
@@ -643,7 +644,7 @@ parseCmnd(char* line)
 int show_help()
 {
 	char *msg =
-	"Interactive tool to maintain an UDF filesystem.\n"
+	"Interactive tool to maintain a UDF filesystem.\n"
 	"Usage:\n"
 	"\twrudf [device]\n"
 	"Available commands:\n"
@@ -683,7 +684,7 @@ main(int argc, char** argv)
 	devicename = argv[1];			/* can specify disk image filename */
 
     if( setpriority(PRIO_PROCESS, 0, -10) ) {
-	printf("setpriority(): %m\n");
+	printf("setpriority(): %s\n", strerror(errno));
     }
 
     hdWorkingDir = getcwd(NULL, 0);

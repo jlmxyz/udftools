@@ -1,8 +1,8 @@
 /*
  * libudffs.h
  *
- * Copyright (c) 2001-2002  Ben Fennema <bfennema@falcon.csc.calpoly.edu>
- * Copyright (c) 2014-2017  Pali Rohár <pali.rohar@gmail.com>
+ * Copyright (c) 2001-2002  Ben Fennema
+ * Copyright (c) 2014-2018  Pali Rohár <pali.rohar@gmail.com>
  * All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,9 +29,11 @@
 #ifndef __LIBUDFFS_H
 #define __LIBUDFFS_H
 
+#include <stddef.h>
+
 #include "ecma_167.h"
 #include "osta_udf.h"
-#include "udf_endian.h"
+#include "bswap.h"
 
 #define FLAG_FREED_BITMAP		0x00000001
 #define FLAG_FREED_TABLE		0x00000002
@@ -232,5 +234,8 @@ extern size_t encode_string(struct udf_disc *, dstring *, const char *, size_t);
 /* misc.c */
 extern const char *appname;
 size_t gen_uuid_from_vol_set_ident(char[17], const dstring *, size_t);
+uint32_t strtou32(const char *, int, int *);
+uint16_t strtou16(const char *, int, int *);
+uint32_t randu32(void);
 
 #endif /* __LIBUDFFS_H */

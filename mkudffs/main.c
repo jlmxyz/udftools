@@ -1,8 +1,8 @@
 /*
  * main.c
  *
- * Copyright (c) 2001-2002  Ben Fennema <bfennema@falcon.csc.calpoly.edu>
- * Copyright (c) 2014-2017  Pali Rohár <pali.rohar@gmail.com>
+ * Copyright (c) 2001-2002  Ben Fennema
+ * Copyright (c) 2014-2018  Pali Rohár <pali.rohar@gmail.com>
  * All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,13 +30,13 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <inttypes.h>
 #include <locale.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <time.h>
-#include <sys/time.h>
 #include <errno.h>
 #include <limits.h>
 #include <dirent.h>
@@ -119,7 +119,7 @@ static uint32_t get_blocks(int fd, int blocksize, uint32_t opt_blocks)
 
 	if (blocks > UINT32_MAX)
 	{
-		fprintf(stderr, "%s: Warning: Disk is too big, using only %lu blocks\n", appname, (unsigned long int)UINT32_MAX);
+		fprintf(stderr, "%s: Warning: Disk is too big, using only %"PRIu32" blocks\n", appname, UINT32_MAX);
 		return UINT32_MAX;
 	}
 
@@ -458,9 +458,9 @@ int main(int argc, char *argv[])
 	len = gen_uuid_from_vol_set_ident(buf, disc.udf_pvd[0]->volSetIdent, 128);
 	printf("uuid=%s\n", buf);
 
-	printf("blocksize=%u\n", (unsigned int)disc.blocksize);
-	printf("blocks=%lu\n", (unsigned long int)disc.blocks);
-	printf("udfrev=%x.%02x\n", (unsigned int)(disc.udf_rev >> 8), (unsigned int)(disc.udf_rev & 0xFF));
+	printf("blocksize=%"PRIu32"\n", disc.blocksize);
+	printf("blocks=%"PRIu32"\n", disc.blocks);
+	printf("udfrev=%"PRIx16".%02"PRIx16"\n", disc.udf_rev >> 8, disc.udf_rev & 0xFF);
 
 	split_space(&disc);
 
@@ -471,12 +471,12 @@ int main(int argc, char *argv[])
 	setup_vds(&disc);
 
 	if (disc.vat_block)
-		printf("vatblock=%lu\n", (unsigned long int)disc.vat_block);
+		printf("vatblock=%"PRIu32"\n", disc.vat_block);
 
 	dump_space(&disc);
 
 	if (disc.blocks <= 257)
-		fprintf(stderr, "%s: Warning: UDF filesystem has less then 258 blocks, it can cause problems\n", appname);
+		fprintf(stderr, "%s: Warning: UDF filesystem has less than 258 blocks, it can cause problems\n", appname);
 
 	if (len == (size_t)-1)
 		fprintf(stderr, "%s: Warning: Volume Set Identifier must be at least 8 characters long\n", appname);

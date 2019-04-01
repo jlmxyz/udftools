@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017  Pali Rohár <pali.rohar@gmail.com>
+ * Copyright (C) 2017-2018  Pali Rohár <pali.rohar@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,9 +19,15 @@
 #include "config.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
 
 #include "libudffs.h"
 
@@ -81,4 +87,72 @@ size_t gen_uuid_from_vol_set_ident(char uuid[17], const dstring *vol_set_ident, 
 		return nonhexpos;
 
 	return 16;
+}
+
+uint32_t strtou32(const char *str, int base, int *failed)
+{
+	char *endptr = NULL;
+	long long int ret;
+
+	/* strtou* does not signal underflow, so use signed variant */
+	errno = 0;
+	ret = strtoll(str, &endptr, base);
+	/* strto* skips leading whitespaces, so detect them via isspace */
+	*failed = (!*str || isspace(*str) || *endptr || errno || ret < 0 || ret > UINT32_MAX) ? 1 : 0;
+	return ret;
+}
+
+uint16_t strtou16(const char *str, int base, int *failed)
+{
+	uint32_t ret;
+
+	ret = strtou32(str, base, failed);
+	*failed = (*failed || ret > UINT16_MAX) ? 1 : 0;
+	return ret;
+}
+
+static inline unsigned int intlog2(unsigned int word)
+{
+	unsigned int result = 0;
+
+	while (word >>= 1)
+		result++;
+	return result;
+}
+
+uint32_t randu32(void)
+{
+	int fd;
+	uint32_t value;
+	unsigned int bits;
+	unsigned int rand_bits;
+
+	static int srand_done = 0;
+
+	fd = open("/dev/urandom", O_RDONLY);
+	if (fd >= 0)
+	{
+		if (read(fd, &value, sizeof(value)) == sizeof(value))
+		{
+			close(fd);
+			return value;
+		}
+		close(fd);
+	}
+
+	if (!srand_done)
+	{
+		srand(time(NULL) * getpid());
+		srand_done = 1;
+	}
+
+	value = 0;
+	rand_bits = intlog2((unsigned int)RAND_MAX+1);
+	for (bits = 0; bits < 32; bits += rand_bits)
+	{
+		value <<= rand_bits;
+		value |= rand();
+	}
+
+	return value;
 }

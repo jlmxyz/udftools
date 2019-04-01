@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script.
 AC_PREREQ([2.64])
-AC_INIT(udftools, 2.0, , , [https://github.com/pali/udftools/])
+AC_INIT(udftools, 2.1, , , [https://github.com/pali/udftools/])
 AC_CONFIG_AUX_DIR(config)
 AM_CONFIG_HEADER(include/config.h:include/config.in)
 AM_INIT_AUTOMAKE
@@ -18,14 +18,11 @@ dnl Checks for libraries.
 AC_CHECK_LIB(readline, readline, [ ])
 
 dnl Checks for header files.
-AC_HEADER_STDC
-AC_CHECK_HEADERS(fcntl.h sys/time.h unistd.h getopt.h string.h readline/readline.h)
+AC_CHECK_HEADERS(readline/readline.h)
 
 dnl Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE
 AC_C_BIGENDIAN
-AC_HEADER_TIME
-AC_STRUCT_TM
 AC_SYS_LARGEFILE
 
 PKG_PROG_PKG_CONFIG

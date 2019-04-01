@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 #include "wrudf.h"
 #include "ide-pc.h"
 #include "bswap.h"
@@ -65,7 +66,7 @@ unsigned char*	readCDR(uint32_t lbn, uint16_t partition) {
 	stat = lseek(device, 2048 * pbn, SEEK_SET);
 	stat = read(device, blockBuffer, 2048);
 	if( stat != 2048 )
-	    fail("readCDR(hd) failed %m\n");
+	    fail("readCDR(hd) failed %s\n", strerror(errno));
 	else
 	    return blockBuffer;
     }
@@ -89,7 +90,7 @@ writeHD(uint32_t physical, unsigned char* src)
     stat = write(device, src, 2048);
 
     if( stat != 2048 ) {
-	printf("writeHD failed %m\n");
+	printf("writeHD failed %s\n", strerror(errno));
     }
 }
 
@@ -204,7 +205,7 @@ int verifyCDR(struct fileEntry *fe) {
     uint32_t	pbn, pbnFE, rewriteBlkno;
 
     setStrictRead(1);
-    extents = ext = (long_ad*)(fe->allocDescs + fe->lengthExtendedAttr);
+    extents = ext = (long_ad*)(fe->extendedAttrAndAllocDescs + fe->lengthExtendedAttr);
     processed = 0;
     pbnFE = vat[fe->descTag.tagLocation] + pd->partitionStartingLocation;
     pbn = ext->extLocation.logicalBlockNum + pd->partitionStartingLocation;
@@ -298,9 +299,9 @@ void readVATtable() {
     newVATindex = (fe->informationLength - 36) >> 2;
 
     if( sizeof(*fe) + fe->lengthExtendedAttr + fe->informationLength <= 2048 ) {
-	memcpy(vat, fe->allocDescs + fe->lengthExtendedAttr, fe->informationLength - 36);
+	memcpy(vat, fe->extendedAttrAndAllocDescs + fe->lengthExtendedAttr, fe->informationLength - 36);
     } else {
-	readExtents((char*)vat, 1, fe->allocDescs + fe->lengthExtendedAttr);
+	readExtents((char*)vat, 1, fe->extendedAttrAndAllocDescs + fe->lengthExtendedAttr);
     }
 }
 
@@ -339,12 +340,12 @@ writeVATtable()
 
 	if( sizeof(*fe) + size < 2048 ) {
 	    fe->icbTag.flags = ICBTAG_FLAG_AD_IN_ICB;
-	    memcpy(fe->allocDescs, vat, size);
+	    memcpy(fe->extendedAttrAndAllocDescs, vat, size);
 	    fe->lengthAllocDescs = cpu_to_le32(size);
 	} else {
 	    fe->logicalBlocksRecorded = (size + 2047) >> 11;
 	    fe->icbTag.flags = ICBTAG_FLAG_AD_SHORT;
-	    ext = (short_ad*)(fe->allocDescs + fe->lengthExtendedAttr);
+	    ext = (short_ad*)(fe->extendedAttrAndAllocDescs + fe->lengthExtendedAttr);
 	    ext->extLength = size;
 	    ext->extPosition = startBlk  - pd->partitionStartingLocation;
 	    fe->lengthAllocDescs = cpu_to_le32(16);

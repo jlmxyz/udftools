@@ -1,7 +1,7 @@
 /*
  * options.c
  *
- * Copyright (c) 2002       Ben Fennema <bfennema@falcon.csc.calpoly.edu>
+ * Copyright (c) 2002       Ben Fennema
  * All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -24,10 +24,13 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "cdrwtool.h"
 #include "libudffs.h"
 #include "options.h"
+
+#include "../mkudffs/mkudffs.h"
 
 struct option long_options[] = {
 	{ "help", no_argument, NULL, OPT_HELP },
@@ -105,7 +108,8 @@ void parse_args(int argc, char *argv[], struct cdrw_disc *disc, const char **dev
 			}
 			case 'v':
 			{
-				if (udf_set_version(&disc->udf_disc, strtol(optarg, NULL, 16)))
+				int udf_rev = strtol(optarg, NULL, 16);
+				if (udf_rev < 0x0150 || udf_rev > 0x0201 || udf_set_version(&disc->udf_disc, udf_rev))
 					exit(1);
 				printf("udf version set to 0x%04x\n", disc->udf_disc.udf_rev);
 				break;

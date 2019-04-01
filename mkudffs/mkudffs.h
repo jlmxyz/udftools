@@ -1,8 +1,8 @@
 /*
  * mkudffs.h
  *
- * Copyright (c) 2001-2002  Ben Fennema <bfennema@falcon.csc.calpoly.edu>
- * Copyright (c) 2016-2017  Pali Rohár <pali.rohar@gmail.com>
+ * Copyright (c) 2001-2002  Ben Fennema
+ * Copyright (c) 2016-2018  Pali Rohár <pali.rohar@gmail.com>
  * All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,7 +26,6 @@
 
 #include "ecma_167.h"
 #include "osta_udf.h"
-#include "udf_endian.h"
 #include "libudffs.h"
 
 #define CS0				0x00000001
@@ -62,8 +61,7 @@ enum media_type {
 extern char *udf_space_type_str[UDF_SPACE_TYPE_SIZE];
 
 void udf_init_disc(struct udf_disc *);
-int udf_set_version(struct udf_disc *, int);
-void get_random_bytes(void *, size_t);
+int udf_set_version(struct udf_disc *, uint16_t);
 void split_space(struct udf_disc *);
 void dump_space(struct udf_disc *);
 int write_disc(struct udf_disc *);

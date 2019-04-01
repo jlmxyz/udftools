@@ -1,7 +1,7 @@
 /*
  * main.c
  *
- * Copyright (c) 2002       Ben Fennema <bfennema@falcon.csc.calpoly.edu>
+ * Copyright (c) 2002       Ben Fennema
  * All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -24,6 +24,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -87,7 +88,7 @@ int write_func(struct udf_disc *disc, struct udf_extent *ext)
 					memset(buffer, 0x00, bufferlen);
 					lastpacket = ++ packet;
 
-					memcpy(buffer, data->buffer + (bufferlen - offset), data->length - (bufferlen - offset));
+					memcpy(buffer, (uint8_t *)data->buffer + (bufferlen - offset), data->length - (bufferlen - offset));
 					offset = data->length - (bufferlen - offset);
 				}
 				else
