@@ -453,14 +453,14 @@ int main(int argc, char *argv[]) {
     msg("         min write: %04x\n", stats.minUDFWriteRev);
     msg("         max write: %04x\n", stats.maxUDFWriteRev);
     if(fast_mode == 0) {
-        msg("Used Space: %"PRIu64" (%"PRIu64")\n", stats.usedSpace, stats.usedSpace/blocksize);
+        msg("Used Space: %llu (%llu)\n", stats.usedSpace, stats.usedSpace/blocksize);
     }
-    msg("Free Space: %"PRIu64" (%"PRIu64")\n", (uint64_t)(stats.freeSpaceBlocks)*(uint64_t)(blocksize), (uint64_t)(stats.freeSpaceBlocks));
-    msg("Partition size: %"PRIu64" (%"PRIu64")\n", (uint64_t)(stats.partitionSizeBlocks)*(uint64_t)(blocksize), (uint64_t)(stats.partitionSizeBlocks));
+    msg("Free Space: %llu (%llu)\n", (uint64_t)(stats.freeSpaceBlocks)*(uint64_t)(blocksize), (uint64_t)(stats.freeSpaceBlocks));
+    msg("Partition size: %llu (%llu)\n", (uint64_t)(stats.partitionSizeBlocks)*(uint64_t)(blocksize), (uint64_t)(stats.partitionSizeBlocks));
     uint64_t expUsedSpace = 0;
     if(fast_mode == 0) {
         expUsedSpace = (stats.partitionSizeBlocks-stats.freeSpaceBlocks)*blocksize;
-        msg("Expected Used Space: %"PRIu64" (%"PRIu64")\n", (uint64_t)expUsedSpace, (uint64_t)(expUsedSpace)/(uint64_t)(blocksize));
+        msg("Expected Used Space: %llu (%llu)\n", (uint64_t)expUsedSpace, (uint64_t)(expUsedSpace)/(uint64_t)(blocksize));
         msg("Expected Used Blocks: %d\nExpected Unused Blocks: %d\n", stats.expUsedBlocks, stats.expUnusedBlocks);
     }
     if(fast_mode == 0) {

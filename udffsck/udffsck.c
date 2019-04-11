@@ -30,6 +30,7 @@
 #include "utils.h"
 #include "libudffs.h"
 #include "options.h"
+#include "string.h"
 
 // Local function protypes
 uint8_t get_file(int fd, uint8_t **dev, const struct udf_disc *disc, size_t st_size, uint32_t lbnlsn, uint32_t lsn, struct filesystemStats *stats, uint32_t depth, uint32_t uuid, struct fileInfo info, vds_sequence_t *seq );
@@ -45,6 +46,24 @@ uint8_t get_error(vds_sequence_t *seq, uint16_t tagIdent, vds_type_e vds);
 #define UNMARK_BLOCK 0  ///< Unmark switch for markUsedBlock() function
 
 #define MAX_DEPTH 100 ///< Maximal printed filetree depth is MAX_DEPTH/4. Required by function depth2str().
+
+
+
+/**
+ * \brief
+ *
+ * 
+ *
+ * \param[in] 
+ * \return 
+ */
+static inline lb_addr lelb_to_cpu(lb_addr in)
+{
+	lb_addr out;
+	out.logicalBlockNum = le32_to_cpu(in.logicalBlockNum);
+	out.partitionReferenceNum = le16_to_cpu(in.partitionReferenceNum);
+	return out;
+}
 
 /**
  * \brief File tree prefix creator
@@ -755,9 +774,9 @@ uint64_t count_used_bits(struct filesystemStats *stats) {
 
     uint64_t countedBits = 0;
     uint8_t rest = stats->partitionNumOfBits % 8;
-    for(int i = 0; i<(int)(stats->partitionNumOfBytes); i++) {
+    for(uint32_t i = 0; i<stats->partitionNumOfBytes; i++) {
         uint8_t piece = ~stats->actPartitionBitmap[i];
-        if(i<(int)(stats->partitionNumOfBytes-1)) {
+        if(i< stats->partitionNumOfBytes-1) {
             for(int j = 0; j<8; j++) {
                 countedBits += (piece>>j)&1;
             }
@@ -1171,14 +1190,14 @@ int get_lvid(int fd, uint8_t **dev, struct udf_disc *disc, int sectorsize, size_
     }
     dbg("Free Space Table\n");
     for(int i=0; i<(int)(disc->udf_lvid->numOfPartitions * 4); i++) {
-        note("0x%08x, %d\n", disc->udf_lvid->freeSpaceTable[i], disc->udf_lvid->freeSpaceTable[i]);
+        note("0x%08x, %d\n", disc->udf_lvid->data[sizeof(uint32_t)*i], disc->udf_lvid->data[sizeof(uint32_t)*i]);
     }
-    stats->freeSpaceBlocks = disc->udf_lvid->freeSpaceTable[0];
-    stats->partitionSizeBlocks = disc->udf_lvid->freeSpaceTable[1];
+    stats->freeSpaceBlocks = disc->udf_lvid->data[sizeof(uint32_t)*0];
+    stats->partitionSizeBlocks = disc->udf_lvid->data[sizeof(uint32_t)*1];
 
     dbg("Size Table\n");
     for(int i=disc->udf_lvid->numOfPartitions * 4; i<(int)(disc->udf_lvid->numOfPartitions * 4 * 2); i++) {
-        note("0x%08x, %d\n", disc->udf_lvid->freeSpaceTable[i],disc->udf_lvid->freeSpaceTable[i]);
+        note("0x%08x, %d\n", disc->udf_lvid->data[sizeof(uint32_t)*i],disc->udf_lvid->data[sizeof(uint32_t)*i]);
     }
 
     if(disc->udf_lvid->nextIntegrityExt.extLength > 0) {
@@ -1307,11 +1326,11 @@ uint8_t markUsedBlock(struct filesystemStats *stats, uint32_t lbn, uint32_t size
                 if(stats->actPartitionBitmap[byte] & (1<<bit)) {
                     stats->actPartitionBitmap[byte] &= ~(1<<bit);
                 } else {
-                    warn("[%d:%d]Error marking block as used. It is already marked.\n", byte, bit);
+                    //warn("[%d:%d]Error marking block as used. It is already marked.\n", byte, bit);
                 }
             } else { // write 1
                 if(stats->actPartitionBitmap[byte] & (1<<bit)) {
-                    warn("[%d:%d]Error marking block as unused. It is already unmarked.\n", byte, bit);
+                    //warn("[%d:%d]Error marking block as unused. It is already unmarked.\n", byte, bit);
                 } else {
                     stats->actPartitionBitmap[byte] |= 1<<bit;
                 }
@@ -1861,13 +1880,13 @@ uint8_t inspect_fid(int fd, uint8_t **dev, const struct udf_disc *disc, size_t s
         } else {
             char *namebuf = calloc(1,256*2);
             memset(namebuf, 0, 256*2);
-            size_t size = decode_utf8(fid->fileIdent, namebuf, fid->lengthFileIdent, 256*2);
+            size_t size = decode_utf8(fid->impUseAndFileIdent, namebuf, fid->lengthFileIdent, 256*2);
             if(size == (size_t) - 1) { //Decoding failed
                 warn("Filename decoding failed."); //TODO add tests
             } else {
                 dbg("Size: %d\n", size);
-                dbg("%sFilename: %s\n", depth2str(depth), namebuf/*fid->fileIdent*/);
-                info.filename = namebuf/*(char *)fid->fileIdent+1*/;
+                dbg("%sFilename: %s\n", depth2str(depth), namebuf/*fid->impUseAndFileIdent*/);
+                info.filename = namebuf/*(char *)fid->impUseAndFileIdent+1*/;
             }
         }
 
@@ -1967,10 +1986,14 @@ uint8_t inspect_fid(int fd, uint8_t **dev, const struct udf_disc *disc, size_t s
                         struct fileEntry *fe = (struct fileEntry *)(dev[chunk]+offset);
                         struct extendedFileEntry *efe = (struct extendedFileEntry *)(dev[chunk]+offset);
                         if(efe->descTag.tagIdent == TAG_IDENT_EFE) {
-                            efe->descTag.descCRC = calculate_crc(efe, sizeof(struct extendedFileEntry) + le32_to_cpu(efe->lengthExtendedAttr) + le32_to_cpu(efe->lengthAllocDescs));
+                            efe->descTag.descCRC = calculate_crc(efe, 
+					    sizeof(struct extendedFileEntry) + le32_to_cpu(efe->lengthExtendedAttr) + le32_to_cpu(efe->lengthAllocDescs)
+					    );
                             efe->descTag.tagChecksum = calculate_checksum(efe->descTag);
                         } else if(efe->descTag.tagIdent == TAG_IDENT_FE) {
-                            fe->descTag.descCRC = calculate_crc(fe, sizeof(struct fileEntry) + le32_to_cpu(fe->lengthExtendedAttr) + le32_to_cpu(fe->lengthAllocDescs));
+                            fe->descTag.descCRC = calculate_crc(fe, 
+					    sizeof(struct fileEntry) + le32_to_cpu(fe->lengthExtendedAttr) + le32_to_cpu(fe->lengthAllocDescs)
+					    );
                             fe->descTag.tagChecksum = calculate_checksum(fe->descTag);
                         } else {
 
@@ -2014,7 +2037,7 @@ uint8_t inspect_fid(int fd, uint8_t **dev, const struct udf_disc *disc, size_t s
             }
         } else {
             dbg("DELETED FID\n");
-            *status |= check_dstring(fid->fileIdent, fid->lengthFileIdent) ? 4 : 0; //FIXME expand for fixing later.
+            *status |= check_dstring(fid->impUseAndFileIdent, fid->lengthFileIdent) ? 4 : 0; //FIXME expand for fixing later.
             print_file_info(info, depth);
         }
         dbg("Len: %d, padding: %d\n", flen, padding);
@@ -2353,7 +2376,7 @@ uint8_t get_file(int fd, uint8_t **dev, const struct udf_disc *disc, size_t st_s
             print_file_info(info, depth);
 
             uint8_t fid_inspected = 0;
-            uint8_t *allocDescs = (ext ? efe->allocDescs : fe->allocDescs) + lea; 
+            uint8_t *allocDescs = (ext ? efe->extendedAttrAndAllocDescs : fe->extendedAttrAndAllocDescs) + lea; 
             if((le16_to_cpu(fe->icbTag.flags) & ICBTAG_FLAG_AD_MASK) == ICBTAG_FLAG_AD_SHORT) {
                 if(dir) {
                     fid_inspected = 1;
@@ -2425,10 +2448,10 @@ uint8_t get_file(int fd, uint8_t **dev, const struct udf_disc *disc, size_t st_s
                 }
 
                 if(descTag->tagIdent == TAG_IDENT_EAHD) {
-                    base = (ext ? efe->allocDescs : fe->allocDescs) + eahd.appAttrLocation;
+                    base = (ext ? efe->extendedAttrAndAllocDescs : fe->extendedAttrAndAllocDescs) + eahd.appAttrLocation;
 
                     dbg("impAttrLoc: %d, appAttrLoc: %d\n", eahd.impAttrLocation, eahd.appAttrLocation);
-                    gf = (struct genericFormat *)(fe->allocDescs + eahd.impAttrLocation);
+                    gf = (struct genericFormat *)(fe->extendedAttrAndAllocDescs + eahd.impAttrLocation);
 
                     dbg("AttrType: %d\n", gf->attrType);
                     dbg("AttrLength: %d\n", gf->attrLength);
@@ -2446,7 +2469,7 @@ uint8_t get_file(int fd, uint8_t **dev, const struct udf_disc *disc, size_t st_s
                         err("EAHD mismatch. Expected IMP, found %d\n", gf->attrType);
                     }
 
-                    gf = (struct genericFormat *)(fe->allocDescs + eahd.appAttrLocation);
+                    gf = (struct genericFormat *)(fe->extendedAttrAndAllocDescs + eahd.appAttrLocation);
 
                     dbg("AttrType: %d\n", gf->attrType);
                     dbg("AttrLength: %d\n", gf->attrLength);
@@ -2479,7 +2502,7 @@ uint8_t get_file(int fd, uint8_t **dev, const struct udf_disc *disc, size_t st_s
                     dbg("[EFE DIR] lengthExtendedAttr: %d\n", efe->lengthExtendedAttr);
                     dbg("[EFE DIR] lengthAllocDescs: %d\n", efe->lengthAllocDescs);
                     for(uint32_t pos=0; pos < efe->lengthAllocDescs; ) {
-                        if(inspect_fid(fd, dev, disc, st_size, lbnlsn, lsn, efe->allocDescs + efe->lengthExtendedAttr, &pos, stats, depth+1, seq, &status) != 0) {
+                        if(inspect_fid(fd, dev, disc, st_size, lbnlsn, lsn, efe->extendedAttrAndAllocDescs + efe->lengthExtendedAttr, &pos, stats, depth+1, seq, &status) != 0) {
                             break;
                         }
                     }
@@ -2487,7 +2510,7 @@ uint8_t get_file(int fd, uint8_t **dev, const struct udf_disc *disc, size_t st_s
                     dbg("[FE DIR] lengthExtendedAttr: %d\n", fe->lengthExtendedAttr);
                     dbg("[FE DIR] lengthAllocDescs: %d\n", fe->lengthAllocDescs);
                     for(uint32_t pos=0; pos < fe->lengthAllocDescs; ) {
-                        if(inspect_fid(fd, dev, disc, st_size, lbnlsn, lsn, fe->allocDescs + fe->lengthExtendedAttr, &pos, stats, depth+1, seq, &status) != 0) {
+                        if(inspect_fid(fd, dev, disc, st_size, lbnlsn, lsn, fe->extendedAttrAndAllocDescs + fe->lengthExtendedAttr, &pos, stats, depth+1, seq, &status) != 0) {
                             break;
                         }
                     }
@@ -3370,9 +3393,9 @@ int fix_lvid(int fd, uint8_t **dev, struct udf_disc *disc, size_t st_size, size_
     ts->microseconds = 0;
     dbg("Type and Timezone: 0x%04x\n", ts->typeAndTimezone);
 
-    uint32_t newFreeSpace = disc->udf_lvid->freeSpaceTable[1] - stats->usedSpace/sectorsize;
-    disc->udf_lvid->freeSpaceTable[0] = cpu_to_le32(newFreeSpace);
-    dbg("New Free Space: %d\n", disc->udf_lvid->freeSpaceTable[0]);
+    uint32_t newFreeSpace = disc->udf_lvid->data[sizeof(uint32_t)*1] - stats->usedSpace/sectorsize;
+    disc->udf_lvid->data[sizeof(uint32_t)*0] = cpu_to_le32(newFreeSpace);
+    dbg("New Free Space: %d\n", disc->udf_lvid->data[sizeof(uint32_t)*0]);
 
     // Close integrity (last thing before write)
     disc->udf_lvid->integrityType = LVID_INTEGRITY_TYPE_CLOSE;

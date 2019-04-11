@@ -114,7 +114,7 @@ void logger(message_type type, char *color, const char *format, va_list arg) {
 		case important:
 			prefix = 0;
             stream = stdout;
-            verblvl = WARN;
+            verblvl = NONE;
 			break;
 		case warning:
 			prefix = "WARN";
